@@ -5,7 +5,7 @@ using UnityEngine;
 
 namespace ScriptLoader
 {
-    internal class ScriptInfo
+    public class ScriptInfo
     {
         private static readonly Dictionary<string, Action<ScriptInfo, string>> CommandParsers =
             new Dictionary<string, Action<ScriptInfo, string>>
@@ -13,8 +13,7 @@ namespace ScriptLoader
                 ["name"] = (si, c) => si.Name = c,
                 ["author"] = (si, c) => si.Author = c,
                 ["desc"] = (si, c) => si.Description = c,
-                ["ref"] = (si, c) => si.References.Add(c.Template(Utilities.KnownPaths)),
-                ["proc_filter"] = (si, c) => si.ProcessFilters.Add(c)
+                ["ref"] = (si, c) => si.References.Add(c.Template(Utilities.KnownPaths))
             };
 
         public string Author { get; set; }

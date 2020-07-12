@@ -1,6 +1,6 @@
-# ScriptLoader for BepInEx 5
+# ScriptLoader for SixModLoader
 
-This is a BepInEx 5 plugin that allows you to run C# script files without compiling them to a DLL.
+This is a SixModLoader fork of BepInEx plugin that allows you to run C# script files without compiling them to a DLL.
 
 This plugin uses a modified version of the Mono Compiler Service (mcs) that allows to use most of C# 7 features.  
 The compiler relies on `System.Reflection.Emit` being present! As such, Unity games using .NET Standard API (i.e. has `netstandard.dll` in the `Managed` folder) 
@@ -8,17 +8,9 @@ will not be able to run this plugin!
 
 **Now scripts ignore visibility checks!** Thanks to [custom MCS](https://github.com/denikson/mcs-unity), you can now access private members (methods, fields) via scripts!
 
-## Why
-
-Because sometimes I'm lazy to open Visual Studio and write proper plugins.
-
-## Installation
-
-Download the latest plugin version from releases and place it into `BepInEx/plugin` folder.
-
 ## Writing and installing scripts
 
-**To install scripts**, create a `scripts` folder in the game's root folder and place raw `.cs` files (C# source code) into it.  
+**To install scripts**, place raw `.cs` files (C# source code) into `SixModLoader/Mods/ScriptLoader/scripts`.  
 **To remove scripts**, remove them from the `scripts` folder (or change file extension to `.cs.off`).
 
 ScriptLoader will automatically load and compile all C# source code files it finds in the folder.  
@@ -27,15 +19,44 @@ ScriptLoader will also automatically run any `static void Main()` methods it fin
 Example script:
 
 ```csharp
-using UnityEngine;
+// #name Example script
+// #author js6pak
+// #desc Descrption of script
 
-public static class MyScript {
+using SixModLoader;
+using UnityEngine;
+using System;
+using CommandSystem;
+using SixModLoader.Api.Configuration;
+using SixModLoader.Api.Extensions;
+using SixModLoader.Events;
+using SixModLoader.Mods;
+using HarmonyLib;
+
+[AutoCommandHandler(typeof(GameConsoleCommandHandler))]
+[AutoCommandHandler(typeof(ClientCommandHandler))]
+[AutoCommandHandler(typeof(RemoteAdminCommandHandler))]
+public class ExampleCommand : ICommand
+{
+    public bool Execute(ArraySegment<string> arguments, ICommandSender sender, out string response)
+    {
+        response = $"Hello {(sender is CommandSender commandSender ? commandSender.Nickname : "someone")}!";
+
+        return true;
+    }
+
+    public string Command => "example-script";
+    public string[] Aliases => new[] { "exs" };
+    public string Description => "Example script command!";
+}
+
+public static class ExampleScript {
     public static void Main() {
-        Debug.Log("Hello, world!");
+        Logger.Info("Hello, world!");
     }
 
     public static void Unload() {
-        // Unload and unpatch everything before reloading the script
+        Logger.Info("Goodbye, world!");
     }
 }
 ```
@@ -57,14 +78,11 @@ You can specify metadata *at the very start of your script* by using the followi
 // #author ghorsington
 // #desc A longer description of the script. This still should be a one-liner.
 // #ref ${Managed}/UnityEngine.UI.dll
-// #ref ${BepInExRoot}/core/MyDependency.dll
-// #proc_filter Game.exe
+// #ref ${SixModLoaderRoot}/core/MyDependency.dll
 
 using UnityEngine;
 ...
 ```
-
-The `proc_filter` tag acts like BepinProcess attribute in BepInEx: it allows you to specify which processes to run the script on.
 
 The `ref` tag is special: ScriptLoader will automatically load any assemblies specified with the tag.  
 The path is relative to the `scripts` folder, but you can use `${Folder}` to reference some special folders.
@@ -73,17 +91,8 @@ Currently the following special folders are available:
 
 * `Managed` -- path to the game's Managed folder with all the main DLLs
 * `Scripts` -- path to the `scripts` folder
-* `BepInExRoot` -- path to the `BepInEx` folder
-
-**WIP**: At the moment, all tags but `ref` have no effect. A GUI is planned to allow to disable any scripts.
+* `SixModLoaderRoot` -- path to the `SixModLoaderRoot` folder
 
 ### Compilation errors
 
-At this moment the compilation errors are simply written to the BepInEx console.
-
-## TODO
-
-* [x] Script reloading
-* [x] Specifying script metadata (name, description, DLL dependencies)
-* [ ] Maybe a UI?
-* [ ] Optionally an ability to locate and use `csc` to compile scripts when mcs cannot be used
+At this moment the compilation errors are simply written to the console.

@@ -1,7 +1,6 @@
 ﻿using System.Collections.Generic;
 using System.IO;
 using System.Text;
-using BepInEx;
 
 namespace ScriptLoader
 {
@@ -9,9 +8,9 @@ namespace ScriptLoader
     {
         public static Dictionary<string, string> KnownPaths = new Dictionary<string, string>
         {
-            ["BepInExRoot"] = Paths.BepInExRootPath,
-            ["Scripts"] = Path.Combine(Paths.GameRootPath, "scripts"),
-            ["Managed"] = Paths.ManagedPath
+            ["BepInExRoot"] = SixModLoader.SixModLoader.Instance.DataPath,
+            ["SixModLoaderRoot"] = SixModLoader.SixModLoader.Instance.DataPath,
+            ["Managed"] = Path.GetFullPath(Path.Combine("SCPSL_Data", "Managed"))
         };
 
         public static string Template(this string template, Dictionary<string, string> replacements)

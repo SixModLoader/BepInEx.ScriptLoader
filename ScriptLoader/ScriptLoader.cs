@@ -5,184 +5,196 @@ using System.Linq;
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
-using BepInEx;
-using BepInEx.Logging;
+using MEC;
+using SixModLoader;
+using SixModLoader.Api;
+using SixModLoader.Events;
+using SixModLoader.Mods;
 
 namespace ScriptLoader
 {
-    [BepInPlugin("horse.coder.tools.scriptloader", "C# Script Loader", "1.2.1")]
-    public class ScriptLoader : BaseUnityPlugin
+    [Mod("SixModLoader.ScriptLoader")]
+    public class ScriptLoader
     {
-        private readonly string scriptsPath = Path.Combine(Paths.GameRootPath, "scripts");
-        private Dictionary<string, ScriptInfo> availableScripts = new Dictionary<string, ScriptInfo>();
-        private FileSystemWatcher fileSystemWatcher;
-        private Assembly lastCompilationAssembly;
-        private string lastCompilationHash;
-        private LoggerTextWriter loggerTextWriter;
-        private bool shouldRecompile;
+        public string ScriptsPath { get; }
+        public Dictionary<string, ScriptInfo> AvailableScripts { get; set; } = new Dictionary<string, ScriptInfo>();
+        private FileSystemWatcher _fileSystemWatcher;
+        private Assembly _lastCompilationAssembly;
+        private string _lastCompilationHash;
+        private LoggerTextWriter _loggerTextWriter;
+        public bool ShouldRecompile { get; set; }
 
-        private void Awake()
+        [Inject]
+        public SixModLoaderApi Api { get; set; }
+
+        public ScriptLoader(ModContainer<ScriptLoader> modContainer)
         {
-            DontDestroyOnLoad(this);
-            loggerTextWriter = new LoggerTextWriter(Logger);
-            CompileScripts();
-
-            fileSystemWatcher = new FileSystemWatcher(scriptsPath);
-            fileSystemWatcher.NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName;
-            fileSystemWatcher.Filter = "*.cs";
-            fileSystemWatcher.Changed += (sender, args) =>
-            {
-                Logger.LogInfo($"File {Path.GetFileName(args.Name)} changed. Recompiling...");
-                shouldRecompile = true;
-            };
-            fileSystemWatcher.Deleted += (sender, args) =>
-            {
-                Logger.LogInfo($"File {Path.GetFileName(args.Name)} removed. Recompiling...");
-                shouldRecompile = true;
-            };
-            fileSystemWatcher.Created += (sender, args) =>
-            {
-                Logger.LogInfo($"File {Path.GetFileName(args.Name)} created. Recompiling...");
-                shouldRecompile = true;
-            };
-            fileSystemWatcher.Renamed += (sender, args) =>
-            {
-                Logger.LogInfo($"File {Path.GetFileName(args.Name)} renamed. Recompiling...");
-                shouldRecompile = true;
-            };
-            fileSystemWatcher.EnableRaisingEvents = true;
+            ScriptsPath = Path.Combine(modContainer.Directory, "scripts");
+            Directory.CreateDirectory(ScriptsPath);
+            Utilities.KnownPaths["Scripts"] = ScriptsPath;
         }
 
-        private void OnDestroy()
+        [EventHandler(typeof(ModEnableEvent))]
+        public void OnEnable()
         {
-            fileSystemWatcher.EnableRaisingEvents = false;
-            fileSystemWatcher.Dispose();
+            _loggerTextWriter = new LoggerTextWriter();
+            CompileScripts();
+
+            _fileSystemWatcher = new FileSystemWatcher(ScriptsPath)
+            {
+                NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName,
+                Filter = "*.cs"
+            };
+
+            _fileSystemWatcher.Changed += (sender, args) =>
+            {
+                Logger.Info($"File {Path.GetFileName(args.Name)} changed. Recompiling...");
+                ShouldRecompile = true;
+            };
+            _fileSystemWatcher.Deleted += (sender, args) =>
+            {
+                Logger.Info($"File {Path.GetFileName(args.Name)} removed. Recompiling...");
+                ShouldRecompile = true;
+            };
+            _fileSystemWatcher.Created += (sender, args) =>
+            {
+                Logger.Info($"File {Path.GetFileName(args.Name)} created. Recompiling...");
+                ShouldRecompile = true;
+            };
+            _fileSystemWatcher.Renamed += (sender, args) =>
+            {
+                Logger.Info($"File {Path.GetFileName(args.Name)} renamed. Recompiling...");
+                ShouldRecompile = true;
+            };
+            _fileSystemWatcher.EnableRaisingEvents = true;
+            Timing.RunCoroutine(Update());
         }
 
-        private void Update()
+        [EventHandler(typeof(ModDisableEvent))]
+        public void OnDisable()
         {
-            if (!shouldRecompile)
-                return;
-            CompileScripts();
-            shouldRecompile = false;
+            _fileSystemWatcher.EnableRaisingEvents = false;
+            _fileSystemWatcher.Dispose();
+        }
+
+        private IEnumerator<float> Update()
+        {
+            while (true)
+            {
+                yield return Timing.WaitForOneFrame;
+                if (ShouldRecompile)
+                {
+                    CompileScripts();
+                    ShouldRecompile = false;
+                }
+            }
         }
 
         private void CompileScripts()
         {
-            if (!Directory.Exists(scriptsPath))
+            if (!Directory.Exists(ScriptsPath))
             {
-                Directory.CreateDirectory(scriptsPath);
+                Directory.CreateDirectory(ScriptsPath);
                 return;
             }
 
-            var files = Directory.GetFiles(scriptsPath, "*.cs");
-            availableScripts = files.ToDictionary(f => f, ScriptInfo.FromTextFile);
-
-            var ignoresPath = Path.Combine(scriptsPath, "scriptignores");
-            if (!File.Exists(ignoresPath))
-                File.WriteAllText(ignoresPath, "");
-
-            bool IsValidProcess(string scriptFile)
+            try
             {
-                var si = availableScripts[scriptFile];
+                var files = Directory.GetFiles(ScriptsPath, "*.cs");
+                AvailableScripts = files.ToDictionary(f => f, ScriptInfo.FromTextFile);
 
-                if (si.ProcessFilters.Count == 0)
-                    return true;
-                return si.ProcessFilters.Any(p => string.Equals(p.ToLowerInvariant().Replace(".exe", ""), Paths.ProcessName,
-                                                                StringComparison.InvariantCultureIgnoreCase));
-            }
+                Logger.Info($"Found {files.Length} scripts to compile");
 
-            var ignores = new HashSet<string>(File.ReadAllLines(ignoresPath).Select(s => s.Trim()));
-            var scriptsToCompile = files.Where(f => IsValidProcess(f) && !ignores.Contains(Path.GetFileName(f))).ToList();
-
-            Logger.LogInfo(
-                $"Found {files.Length} scripts to compile, skipping {files.Length - scriptsToCompile.Count} scripts because of `scriptignores` or process filters");
-
-            var md5 = MD5.Create();
-            var scriptDict = new Dictionary<string, byte[]>();
-            foreach (var scriptFile in scriptsToCompile)
-            {
-                var data = File.ReadAllBytes(scriptFile);
-                md5.TransformBlock(data, 0, data.Length, null, 0);
-                scriptDict[scriptFile] = data;
-            }
-
-            md5.TransformFinalBlock(new byte[0], 0, 0);
-            var hash = Convert.ToBase64String(md5.Hash);
-            
-            if (hash == lastCompilationHash)
-            {
-                Logger.LogInfo("No changes detected! Skipping compilation!");
-                return;
-            }
-
-            foreach (var scriptFile in scriptsToCompile)
-            {
-                if (!availableScripts.TryGetValue(scriptFile, out var info)) continue;
-                foreach (var infoReference in info.References)
-                    Assembly.LoadFile(infoReference);
-            }
-
-            var ass = MonoCompiler.Compile(scriptDict, loggerTextWriter);
-
-            if (ass == null)
-            {
-                Logger.LogError("Skipping loading scripts because of errors above.");
-                return;
-            }
-
-            if (lastCompilationAssembly != null)
-                foreach (var type in lastCompilationAssembly.GetTypes())
+                var md5 = MD5.Create();
+                var scriptDict = new Dictionary<string, byte[]>();
+                foreach (var scriptFile in files)
                 {
+                    var data = File.ReadAllBytes(scriptFile);
+                    md5.TransformBlock(data, 0, data.Length, null, 0);
+                    scriptDict[scriptFile] = data;
+                }
+
+                md5.TransformFinalBlock(new byte[0], 0, 0);
+                var hash = Convert.ToBase64String(md5.Hash);
+
+                if (hash == _lastCompilationHash)
+                {
+                    Logger.Info("No changes detected! Skipping compilation!");
+                    return;
+                }
+
+                foreach (var scriptFile in files)
+                {
+                    if (!AvailableScripts.TryGetValue(scriptFile, out var info)) continue;
+                    foreach (var infoReference in info.References)
+                        Assembly.LoadFile(infoReference);
+                }
+
+                var ass = MonoCompiler.Compile(scriptDict, _loggerTextWriter);
+
+                if (ass == null)
+                {
+                    Logger.Error("Skipping loading scripts because of errors above.");
+                    return;
+                }
+
+                if (_lastCompilationAssembly != null)
+                    foreach (var type in _lastCompilationAssembly.GetTypes())
+                    {
+                        Api.CommandManager.UnregisterCommand(type);
+
+                        var method = type.GetMethods(BindingFlags.Static | BindingFlags.Public)
+                            .FirstOrDefault(m => m.Name == "Unload" && m.GetParameters().Length == 0);
+
+                        if (method == null)
+                            continue;
+
+                        SixModLoader.SixModLoader.Instance.EventManager.UnregisterStatic(type);
+                        Logger.Info($"Unloading {type.Name}");
+                        method.Invoke(null, new object[0]);
+                    }
+
+                _lastCompilationAssembly = ass;
+                _lastCompilationHash = hash;
+
+                foreach (var type in ass.GetTypes())
+                {
+                    Api.CommandManager.RegisterCommand(type);
+
                     var method = type.GetMethods(BindingFlags.Static | BindingFlags.Public)
-                        .FirstOrDefault(m => m.Name == "Unload" && m.GetParameters().Length == 0);
+                        .FirstOrDefault(m => m.Name == "Main" && m.GetParameters().Length == 0);
 
                     if (method == null)
                         continue;
 
-                    Logger.Log(LogLevel.Info, $"Unloading {type.Name}");
+                    SixModLoader.SixModLoader.Instance.EventManager.RegisterStatic(type);
+                    Logger.Info($"Running {type.Name}");
                     method.Invoke(null, new object[0]);
                 }
-
-            lastCompilationAssembly = ass;
-            lastCompilationHash = hash;
-
-            foreach (var type in ass.GetTypes())
+            }
+            catch (Exception e)
             {
-                var method = type.GetMethods(BindingFlags.Static | BindingFlags.Public)
-                    .FirstOrDefault(m => m.Name == "Main" && m.GetParameters().Length == 0);
-
-                if (method == null)
-                    continue;
-
-                Logger.Log(LogLevel.Info, $"Running {type.Name}");
-                method.Invoke(null, new object[0]);
+                Logger.Error("Failed compiling scripts\n" + e);
             }
         }
-    }
 
-    internal class LoggerTextWriter : TextWriter
-    {
-        private readonly ManualLogSource logger;
-        private readonly StringBuilder sb = new StringBuilder();
-
-        public LoggerTextWriter(ManualLogSource logger)
+        internal class LoggerTextWriter : TextWriter
         {
-            this.logger = logger;
-        }
+            private StringBuilder StringBuilder { get; } = new StringBuilder();
 
-        public override Encoding Encoding { get; } = Encoding.UTF8;
+            public override Encoding Encoding { get; } = Encoding.UTF8;
 
-        public override void Write(char value)
-        {
-            if (value == '\n')
+            public override void Write(char value)
             {
-                logger.Log(LogLevel.Info, sb.ToString());
-                sb.Length = 0;
-                return;
-            }
+                if (value == '\n')
+                {
+                    Logger.Info(StringBuilder.ToString());
+                    StringBuilder.Length = 0;
+                    return;
+                }
 
-            sb.Append(value);
+                StringBuilder.Append(value);
+            }
         }
     }
 }
