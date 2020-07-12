@@ -143,6 +143,7 @@ namespace ScriptLoader
 
                 if (ass == null)
                 {
+                    _lastCompilationHash = null;
                     Logger.Error("Skipping loading scripts because of errors above.");
                     return;
                 }

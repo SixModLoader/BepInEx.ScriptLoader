@@ -19,19 +19,15 @@ ScriptLoader will also automatically run any `static void Main()` methods it fin
 Example script:
 
 ```csharp
-// #name Example script
+// #name ExampleScript
 // #author js6pak
 // #desc Descrption of script
 
 using SixModLoader;
-using UnityEngine;
 using System;
 using CommandSystem;
-using SixModLoader.Api.Configuration;
 using SixModLoader.Api.Extensions;
-using SixModLoader.Events;
 using SixModLoader.Mods;
-using HarmonyLib;
 
 [AutoCommandHandler(typeof(GameConsoleCommandHandler))]
 [AutoCommandHandler(typeof(ClientCommandHandler))]
@@ -51,6 +47,8 @@ public class ExampleCommand : ICommand
 }
 
 public static class ExampleScript {
+    public static IdentifiedLogger Logger { get; } = new IdentifiedLogger("ExampleScript");
+    
     public static void Main() {
         Logger.Info("Hello, world!");
     }
