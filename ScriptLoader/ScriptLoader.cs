@@ -8,6 +8,7 @@ using System.Text;
 using MEC;
 using SixModLoader;
 using SixModLoader.Api;
+using SixModLoader.Api.Events.Server;
 using SixModLoader.Events;
 using SixModLoader.Mods;
 
@@ -16,6 +17,8 @@ namespace ScriptLoader
     [Mod("SixModLoader.ScriptLoader")]
     public class ScriptLoader
     {
+        public static ScriptLoader Instance { get; private set; }
+        
         public string ScriptsPath { get; }
         public Dictionary<string, ScriptInfo> AvailableScripts { get; set; } = new Dictionary<string, ScriptInfo>();
         private FileSystemWatcher _fileSystemWatcher;
@@ -32,13 +35,13 @@ namespace ScriptLoader
             ScriptsPath = Path.Combine(modContainer.Directory, "scripts");
             Directory.CreateDirectory(ScriptsPath);
             Utilities.KnownPaths["Scripts"] = ScriptsPath;
+            Instance = this;
         }
 
         [EventHandler(typeof(ModEnableEvent))]
         public void OnEnable()
         {
             _loggerTextWriter = new LoggerTextWriter();
-            CompileScripts();
 
             _fileSystemWatcher = new FileSystemWatcher(ScriptsPath)
             {
@@ -67,6 +70,12 @@ namespace ScriptLoader
                 ShouldRecompile = true;
             };
             _fileSystemWatcher.EnableRaisingEvents = true;
+        }
+
+        [EventHandler(typeof(ServerConsoleReadyEvent))]
+        public void OnServerConsoleReady()
+        {
+            CompileScripts();
             Timing.RunCoroutine(Update());
         }
 

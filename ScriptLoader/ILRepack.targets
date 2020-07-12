@@ -15,7 +15,7 @@
       Internalize="true"
       InputAssemblies="@(InputAssemblies)"
       TargetKind="Dll"
-      LibraryPath="$(OutputPath)"
+      LibraryPath="$(OutputPath);$(SCPSL_SERVER)\SCPSL_Data\Managed"
       OutputFile="$(OutputPath)\$(AssemblyName).dll" />
 
   </Target>

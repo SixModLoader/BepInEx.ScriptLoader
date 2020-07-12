@@ -42,6 +42,7 @@
     <Compile Include="ScriptInfo.cs" />
     <Compile Include="ScriptLoader.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="ScriptLoaderCommand.cs" />
     <Compile Include="Utilities.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
